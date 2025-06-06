@@ -1507,7 +1507,7 @@ def make_time_series(
         else:
             s = None
         if line_legend is not None and "opacity" in line_legend:
-            o = line_legend["name"][this_var]
+            o = line_legend["opacity"][this_var]
         else:
             o = 1
 
