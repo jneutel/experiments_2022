@@ -2515,6 +2515,7 @@ def make_bar_plot(
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
     legend_size=TXT_SZ,
+    legend_order="reverse",
     annotation_size=18,
     line_width=3,
     marker_size=MRKR_SZ,
@@ -2608,6 +2609,8 @@ def make_bar_plot(
         size of text in axes
     legend_size : int
         size of text in legend
+    legend_order : str
+        "reverse", "forward"
     annotation_size : int
         size of annotation text
     line_width : int
@@ -2635,11 +2638,16 @@ def make_bar_plot(
     # define specs
     these_keys = list(y_data.keys())
     groups = list(y_data[these_keys[0]].columns)
+    num_groups = len(groups)
     idxs = list(y_data[these_keys[0]].index)
     idxs_i = list(range(len(idxs)))
 
     if tick_vals is None:
         tick_vals = idxs_i
+
+    if bar_mode == "group":
+        group_positions = {g: i for i, g in enumerate(groups)}
+        dx = bar_width / num_groups
 
     # tidy color legend
     if bar_legend is None:
@@ -2715,22 +2723,47 @@ def make_bar_plot(
             else:
                 text = None
 
-            fig.add_trace(
-                go.Bar(
-                    x=tick_vals,
-                    y=vals,
-                    marker_color=bar_legend["color"][group],
-                    opacity=bar_legend["opacity"][group],
-                    marker_pattern=dict(shape=bar_legend["pattern"][group]),
-                    showlegend=False,
-                    width=bar_width,
-                    text=text,
-                    textfont=dict(size=annotation_size),
-                    textangle=annotation_angle,
-                ),
-                row=graph_row + 1,
-                col=graph_col + 1,
-            )
+            if bar_mode == "stack":
+                vals = y_data[key].loc[:, group]
+                fig.add_trace(
+                    go.Bar(
+                        x=tick_vals,
+                        y=vals,
+                        marker_color=bar_legend["color"][group],
+                        opacity=bar_legend["opacity"][group],
+                        marker_pattern=dict(shape=bar_legend["pattern"][group]),
+                        showlegend=False,
+                        width=bar_width,
+                        text=text,
+                        textfont=dict(size=annotation_size),
+                        textangle=annotation_angle,
+                    ),
+                    row=graph_row + 1,
+                    col=graph_col + 1,
+                )
+            elif bar_mode == "group":
+                vals = y_data[key][group].values
+                offset_x = [
+                    x + (group_positions[group] - (num_groups - 1) / 2) * dx
+                    for x in tick_vals
+                ]
+                fig.add_trace(
+                    go.Bar(
+                        x=offset_x,
+                        y=vals,
+                        width=dx * (1 - bar_group_gap),
+                        marker_color=bar_legend["color"][group],
+                        opacity=bar_legend["opacity"][group],
+                        marker_pattern=dict(shape=bar_legend["pattern"][group]),
+                        showlegend=False,
+                        text=text if group in annotations else None,
+                        textfont=dict(size=annotation_size),
+                        textangle=annotation_angle,
+                    ),
+                    row=graph_row + 1,
+                    col=graph_col + 1,
+                )
+
             if (secondary_y_data is not None) and (
                 group in secondary_y_data[key].columns
             ):
@@ -2752,7 +2785,9 @@ def make_bar_plot(
         graph_col += 1
 
     # legend
-    for group in reversed(groups):
+    if legend_order == "reversed":
+        groups = reversed(groups)
+    for group in groups:
         if bar_legend["name"][group] not in dont_add_to_legend:
             fig.add_trace(
                 go.Bar(
@@ -2765,7 +2800,9 @@ def make_bar_plot(
             )
 
     if pattern_legend is not None:
-        for condition in reversed(pattern_legend):
+        if legend_order == "reversed":
+            conditions = reversed(pattern_legend)
+        for condition in conditions:
             fig.add_trace(
                 go.Bar(
                     x=[np.nan],
