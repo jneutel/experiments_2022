@@ -2487,6 +2487,7 @@ def find_bar_min_max(y_data, bar_mode):
 
 def make_bar_plot(
     y_data,
+    secondary_bars=[],
     secondary_y_data=None,
     bar_width=0.75,
     bar_gap=0.2,
@@ -2515,6 +2516,7 @@ def make_bar_plot(
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
     legend_size=TXT_SZ,
+    legend_order="reversed",
     annotation_size=18,
     line_width=3,
     marker_size=MRKR_SZ,
@@ -2531,6 +2533,8 @@ def make_bar_plot(
         each df should have the same idx and cols
         key is the subplot title
         idx is the x-axis, cols are the sub-categories
+    secondary_bars : list
+        list of groups/rows to use a secondary axis
     secondary_y_data : dict(pd.DataFrame) or pd.DataFrame
         {key : pd.DataFrame}
         for line data overlayed on top of bars
@@ -2608,6 +2612,8 @@ def make_bar_plot(
         size of text in axes
     legend_size : int
         size of text in legend
+    legend_order : str
+        "reversed", "forward"
     annotation_size : int
         size of annotation text
     line_width : int
@@ -2635,11 +2641,16 @@ def make_bar_plot(
     # define specs
     these_keys = list(y_data.keys())
     groups = list(y_data[these_keys[0]].columns)
+    num_groups = len(groups)
     idxs = list(y_data[these_keys[0]].index)
     idxs_i = list(range(len(idxs)))
 
     if tick_vals is None:
         tick_vals = idxs_i
+
+    if bar_mode == "group":
+        group_positions = {g: i for i, g in enumerate(groups)}
+        dx = bar_width / num_groups
 
     # tidy color legend
     if bar_legend is None:
@@ -2680,8 +2691,9 @@ def make_bar_plot(
         graph_num_cols = len(these_keys)
     graph_num_rows = math.ceil((len(these_keys)) / graph_num_cols)
 
+    this_bool = len(secondary_bars) >= 1 or secondary_y_data is not None
     specs = [
-        [{"secondary_y": secondary_y_data is not None} for _ in range(graph_num_cols)]
+        [{"secondary_y": this_bool} for _ in range(graph_num_cols)]
         for _ in range(graph_num_rows)
     ]
 
@@ -2715,22 +2727,49 @@ def make_bar_plot(
             else:
                 text = None
 
-            fig.add_trace(
-                go.Bar(
-                    x=tick_vals,
-                    y=vals,
-                    marker_color=bar_legend["color"][group],
-                    opacity=bar_legend["opacity"][group],
-                    marker_pattern=dict(shape=bar_legend["pattern"][group]),
-                    showlegend=False,
-                    width=bar_width,
-                    text=text,
-                    textfont=dict(size=annotation_size),
-                    textangle=annotation_angle,
-                ),
-                row=graph_row + 1,
-                col=graph_col + 1,
-            )
+            if bar_mode == "stack":
+                for i, row in enumerate(idxs):
+                    fig.add_trace(
+                        go.Bar(
+                            x=[tick_vals[i]],
+                            y=[y_data[key].loc[row, group]],
+                            width=bar_width,
+                            marker_color=bar_legend["color"][group],
+                            opacity=bar_legend["opacity"][group],
+                            marker_pattern=dict(shape=bar_legend["pattern"][group]),
+                            showlegend=False,
+                            text=text[i] if group in annotations else None,
+                            textfont=dict(size=annotation_size),
+                            textangle=annotation_angle,
+                        ),
+                        secondary_y=row in secondary_bars,
+                        row=graph_row + 1,
+                        col=graph_col + 1,
+                    )
+            elif bar_mode == "group":
+                offset_x = [
+                    x + (group_positions[group] - (num_groups - 1) / 2) * dx
+                    for x in tick_vals
+                ]
+                for i, row in enumerate(idxs):
+                    fig.add_trace(
+                        go.Bar(
+                            x=[offset_x[i]],
+                            y=[y_data[key].loc[row, group]],
+                            width=dx * (1 - bar_group_gap),
+                            marker_color=bar_legend["color"][group],
+                            opacity=bar_legend["opacity"][group],
+                            marker_pattern=dict(shape=bar_legend["pattern"][group]),
+                            showlegend=False,
+                            text=text[i] if group in annotations else None,
+                            textfont=dict(size=annotation_size),
+                            textangle=annotation_angle,
+                        ),
+                        secondary_y=row in secondary_bars,
+                        row=graph_row + 1,
+                        col=graph_col + 1,
+                    )
+
             if (secondary_y_data is not None) and (
                 group in secondary_y_data[key].columns
             ):
@@ -2749,10 +2788,13 @@ def make_bar_plot(
                     row=graph_row + 1,
                     col=graph_col + 1,
                 )
+
         graph_col += 1
 
     # legend
-    for group in reversed(groups):
+    if legend_order == "reversed":
+        groups = reversed(groups)
+    for group in groups:
         if bar_legend["name"][group] not in dont_add_to_legend:
             fig.add_trace(
                 go.Bar(
@@ -2765,7 +2807,9 @@ def make_bar_plot(
             )
 
     if pattern_legend is not None:
-        for condition in reversed(pattern_legend):
+        if legend_order == "reversed":
+            conditions = reversed(pattern_legend)
+        for condition in conditions:
             fig.add_trace(
                 go.Bar(
                     x=[np.nan],
@@ -2807,6 +2851,12 @@ def make_bar_plot(
         grid_color=grid_color,
         y_range=y_range,
     )
+    # secondary axis
+    if len(secondary_bars) >= 1:
+        secondary_y_data = {}
+        for project in y_data:
+            secondary_y_data[project] = y_data[project].loc[secondary_bars, :]
+
     if secondary_y_data is not None:
         fig.update_yaxes(
             title_text=secondary_y_axis_title,

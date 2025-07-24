@@ -54,6 +54,7 @@ AVAILABLE_VARIABLES = [
     "zone-deviation_coolsp",
     "zone-deviation_heatsp",
     "zone-simple_cooling_requests",
+    "zone-simple_heating_requests",
     "ahu-airflow",
 ]
 
@@ -64,6 +65,7 @@ VARIABLE_DEPENDENCIES = {
     "zone-deviation_coolsp": ["zone-temps", "zone-coolsp"],
     "zone-deviation_heatsp": ["zone-temps", "zone-heatsp"],
     "zone-simple_cooling_requests": ["zone-tloads"],
+    "zone-simple_heating_requests": ["zone-tloads"],
     "ahu-airflow": ["zone-map", "zone-airflow"],
 }
 
@@ -267,6 +269,35 @@ def compute_zone_simple_cooling_requests(data_dict):
     return df
 
 
+def compute_zone_simple_heating_requests(data_dict):
+    """
+    1 if tload below -70%, 0 if not
+
+    Parameters
+    ----------
+    data_dict : dict
+        dictionary containing the data needed for this calc
+        keys of dictionary are variable name
+        value is the df
+        in this case, {"zone-tloads", df1}
+
+    Returns
+    -------
+    pandas.DataFrame
+
+    Notes
+    -----
+    - Assumes that we can load zone-tloads
+    - Unitless
+    """
+    for this_var in data_dict:
+        data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
+    tload = data_dict["zone-tloads"]
+    df = pd.DataFrame(0, index=tload.index, columns=tload.columns)
+    df[tload <= -70] = 1
+    return df
+
+
 def compute_ahu_airflow(data_dict):
     """
     Calculates total airflow supply bottom up using zone airflow
@@ -313,5 +344,6 @@ FUNCTIONS = {
     "zone-deviation_coolsp": compute_zone_deviation_coolsp,
     "zone-deviation_heatsp": compute_zone_deviation_heatsp,
     "zone-simple_cooling_requests": compute_zone_simple_cooling_requests,
+    "zone-simple_heating_requests": compute_zone_simple_heating_requests,
     "ahu-airflow": compute_ahu_airflow,
 }
