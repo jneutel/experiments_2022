@@ -25,3 +25,6 @@ env/
 # OS and editor files
 .DS_Store
 *.swp
+
+# Used for processing
+notebooks/dicts_dfs/
