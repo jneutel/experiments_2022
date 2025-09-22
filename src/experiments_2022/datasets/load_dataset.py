@@ -6,7 +6,15 @@ from experiments_2022.datasets import utils
 from experiments_2022.zone_level_analysis.cleaning import clean_df
 
 
-def load_zones(dataset, project, name, clean_data=False, resample_data=False):
+def load_zones(
+    dataset,
+    project,
+    name,
+    clean_data=False,
+    resample_rule="1h",
+    resample_statistic="Mean",
+    resample_data=False,
+):
     """
     Load zonal data for a particular dataset, building, filter
 
@@ -18,7 +26,9 @@ def load_zones(dataset, project, name, clean_data=False, resample_data=False):
     project : str
     name : str
     clean_data : bool
-    resample_data : bool
+    resample_rule : str
+    resample_statistic : str
+    resample_data : bool ### to delete, will be breaking change
 
     Returns
     -------
@@ -31,20 +41,30 @@ def load_zones(dataset, project, name, clean_data=False, resample_data=False):
 
     Examples
     --------
-    `datasets.load_zones("2022", "OFF-1", "zone-temps")
+    `datasets.load_zones("2022", "ALUMNI", "zone-temps")
     """
     if name in utils.VARIABLE_DEPENDENCIES:
         try:
             data_dict = {}
             variables = utils.VARIABLE_DEPENDENCIES[name]
+            if ("weather-oat" in variables) or ("weather-rh" in variables):
+                resample_data = True
             for this_var in variables:
-                this_df = load_zones(
-                    dataset,
-                    project,
-                    this_var,
-                    clean_data=clean_data,
-                    resample_data=resample_data,
-                )
+                if this_var == "weather-oat":
+                    this_df = load_weather(dataset)["temperature"].to_frame()
+                    this_df.columns = ["temperature"]
+                elif this_var == "weather-rh":
+                    this_df = load_weather(dataset)["RH"].to_frame()
+                    this_df.columns = ["RH"]
+                else:
+                    this_df = load_zones(
+                        dataset,
+                        project,
+                        this_var,
+                        clean_data=clean_data,
+                        resample_rule=resample_rule,
+                        resample_statistic=resample_statistic,
+                    )
                 data_dict[this_var] = this_df
             fn = utils.FUNCTIONS[name]
             if "project" in inspect.signature(fn).parameters:
@@ -66,15 +86,26 @@ def load_zones(dataset, project, name, clean_data=False, resample_data=False):
                     no_weekends=False,
                     SI_units=False,
                 )
-            if resample_data and isinstance(this_df.index, pd.DatetimeIndex):
-                this_df = this_df.resample("1h").mean()
+            if (resample_rule is not None) and isinstance(
+                this_df.index, pd.DatetimeIndex
+            ):
+                if resample_statistic == "Sum":
+                    this_df = this_df.resample(resample_rule).sum()
+                else:
+                    this_df = this_df.resample(resample_rule).mean()
             return this_df
         except FileNotFoundError:
             print(f"Could not find {filename}")
 
 
 def pull_from_dataset(
-    dataset, projects, this_var, clean_data=False, resample_data=False
+    dataset,
+    projects,
+    this_var,
+    clean_data=False,
+    resample_rule="1h",
+    resample_statistic="Mean",
+    resample_data=False,
 ):
     """
     Helper function to pull from datasets for several buildings
@@ -85,7 +116,9 @@ def pull_from_dataset(
     projects : list
     this_var : str
     clean_data : bool
-    resample_data : bool
+    resample_rule : str
+    resample_statistic : str
+    resample_data : bool ### to delete, will be breaking change
 
     Returns
     -------
@@ -98,6 +131,8 @@ def pull_from_dataset(
             project=project,
             name=this_var,
             clean_data=clean_data,
+            resample_rule=resample_rule,
+            resample_statistic=resample_statistic,
             resample_data=resample_data,
         )
     return dfs

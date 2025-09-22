@@ -33,6 +33,7 @@ LOWER_LIMIT = {
     "zone-deadband_bottom": 50,
     "zone-local_offset": -15,
     "zone-simple_cooling_requests": -0.1,
+    "zone-total_cooling": 0,
 }
 
 # in original units
@@ -40,7 +41,7 @@ LOWER_LIMIT = {
 UPPER_LIMIT = {
     "weather-oat": 130,
     "building-cooling": 10000,  # tons/h
-    "building-heating": 100000000,  # kbtu/h
+    "building-heating": 10000,  # kbtu/h
     "building-electricity": 10000,  # kw
     "ahu-airflow": 10000000,  # inf
     "ahu-dat": 85,
@@ -62,6 +63,7 @@ UPPER_LIMIT = {
     "zone-deadband_bottom": 80,
     "zone-local_offset": 15,
     "zone-simple_cooling_requests": 1.1,
+    "zone-total_cooling": 1000,
 }
 
 OCCUPANCY_TIME_RANGE = (dt.time(9, 0), dt.time(18, 0))
@@ -179,6 +181,121 @@ PRESSURE_VARIABLES = [
 ]
 
 
+def create_sp_filter(sp_schedules, sps=[74], reverse_filter=False):
+    if isinstance(sp_schedules, dict):
+        return_df = False
+        projects = list(sp_schedules.keys())
+    else:
+        return_df = True
+        projects = ["project"]
+        sp_schedules = input_to_dict(sp_schedules, projects)
+
+    masks = {}
+    for project in projects:
+        if reverse_filter:
+            mask = ~sp_schedules[project].isin(sps)
+        else:
+            mask = sp_schedules[project].isin(sps)
+
+        # Convert boolean mask -> 1 / NaN
+        masks[project] = mask.astype(int).where(mask)
+
+    if return_df:
+        return masks["project"]
+    return masks
+
+
+def clean_projects(
+    df,
+    start_date=None,
+    end_date=None,
+    only_business_hours=False,
+    no_weekends=False,
+    hourly_filter=None,
+    lb_all=0.0,
+    ub_all=None,
+    lb_dict=None,
+    up_dict=None,
+    scrub_dates=None,
+):
+    """
+    Input is now a df, and we can clean each column separatley
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        index is time, columns are buildings
+    start_date : pd.Timestamp() or dict
+        month-day-year
+        if pd.Timestamp(), same date applies to all projects
+        if dict, then can be building specific
+        default = None, look at earliest date in dataset
+    end_date : ppd.Timestamp() or dict
+        month-day-year
+        if pd.Timestamp(), same date applies to all projects
+        if dict, then can be building specific
+        default = None, look at latest date in dataset
+    only_business_hours : bool or dict
+        if bool, then same logic applies for all builings
+        if dict, then can be building specific
+        True means only look at 9 AM to 6 PM (OCCUPANCY_TIME_RANGE)
+        default = True
+    no_weekends : bool or dict
+        if bool, then same logic applies for all builings
+        if dict, then can be building specific
+        default = True, remove weekends for all buildings
+    hourly_filter : pd.Series() or dict of pd.Series()
+        allows user to filter by specific hours
+        value in series is unimportant, only index used to filter
+        if pd.Series(), same filter applies to all projects
+        if dict of pd.Series(), building specific filters
+        default = None, no filter
+    lb_all : float
+        lower bound to apply to all buildings
+        default 0
+    ub_all : float
+        upper bound to apply to all buildings
+        default None
+    lb_dict : dict
+        lower bound building specific
+        {project : int}
+    up_dict : dict
+        upper bound building specific
+        {project : int}
+    scrub_dates : dict
+        {project : list(list)} or
+        {project : list(tuple)}
+        for each project, scrub out specific date ranges
+
+    Notes
+    -----
+    All bounds not inclusive
+    """
+    df = clean_by_column(
+        df=df,
+        start_date=start_date,
+        end_date=end_date,
+        only_business_hours=only_business_hours,
+        no_weekends=no_weekends,
+        hourly_filter=hourly_filter,
+    )
+    if lb_all is not None:
+        df[df < lb_all] = np.nan
+    if ub_all is not None:
+        df[df > ub_all] = np.nan
+    if lb_dict is not None:
+        for project in lb_dict:
+            df[project][df[project] < lb_dict[project]] = np.nan
+    if up_dict is not None:
+        for project in up_dict:
+            df[project][df[project] > up_dict[project]] = np.nan
+    if scrub_dates is not None:
+        for project in scrub_dates:
+            for date_tuples in scrub_dates[project]:
+                df.loc[date_tuples[0] : date_tuples[1], project] = np.nan
+    return df
+
+
 def clean_columns(df, this_var, remove_FCUs=False):
     """
     Cleans the columns of a df
@@ -247,7 +364,8 @@ def clean_df(
     no_weekends=True,
     hourly_filter=None,
     hourly_filter_reverse=False,
-    resample_rule="1h",
+    df_filter=None,
+    resample_rule=None,
     resample_statistic="Mean",
     remove_FCUs=False,
     SI_units=False,
@@ -281,9 +399,13 @@ def clean_df(
         True, then scrub out the idxs out hourly filter
         False, then only have the hourly filter
         default False
+    df_filter : pd.DatFrame
+        way to filter by another df
+        cols and index should match df
+        values should either be NAN or 1
     resample_rule : str
         allows user to re-index a df into different time steps
-        default "1h", another option is None
+        default None, another option is "1h"
     resample_statistic : str
         statistic used for resampling
         default "Mean", can also do "Sum"
@@ -325,6 +447,8 @@ def clean_df(
         df = df.between_time(OCCUPANCY_TIME_RANGE[0], OCCUPANCY_TIME_RANGE[1])
     if no_weekends:
         df[df.index.dayofweek >= 5] = np.nan  # saturday (5), sunday (6)
+    if df_filter is not None:
+        df_filter = df_filter.loc[df.index, df.columns]
     # apply hourly filter
     if hourly_filter is not None:
         common = df.index.intersection(hourly_filter.index, sort=True)
@@ -332,6 +456,8 @@ def clean_df(
             df.loc[common, :] = np.nan
         else:
             df = df.loc[common, :]
+    elif df_filter is not None:
+        df = df * df_filter
     # look at only time steps of interest
     df = df.dropna(axis=0, how="all")
     # handle nonsensicle data
@@ -361,7 +487,8 @@ def clean_dfs(
     no_weekends=True,
     hourly_filter=None,
     hourly_filter_reverse=False,
-    resample_rule="1h",
+    df_filter=None,
+    resample_rule=None,
     resample_statistic="Mean",
     remove_FCUs=False,
     SI_units=False,
@@ -405,6 +532,10 @@ def clean_dfs(
         True, then scrub out the idxs out hourly filter
         False, then only have the hourly filter
         default False
+    df_filter : pd.DataFrame or dict of of pd.DataFrame
+        way to filter by another df
+        cols and index should match df
+        values should either be NAN or 1
     resample_rule : str
         allows user to re-index a df into different time steps
         default "1h", another option is None
@@ -431,6 +562,7 @@ def clean_dfs(
     no_weekends_dict = input_to_dict(no_weekends, projects)
     hourly_filter_dict = input_to_dict(hourly_filter, projects)
     hourly_filter_reverse_dict = input_to_dict(hourly_filter_reverse, projects)
+    df_filter_dict = input_to_dict(df_filter, projects)
     SI_units_dict = input_to_dict(SI_units, projects)
     cleaned_dfs = {}
     for project in projects:
@@ -443,6 +575,7 @@ def clean_dfs(
             no_weekends=no_weekends_dict[project],
             hourly_filter=hourly_filter_dict[project],
             hourly_filter_reverse=hourly_filter_reverse_dict[project],
+            df_filter=df_filter_dict[project],
             SI_units=SI_units_dict[project],
             resample_rule=resample_rule,
             resample_statistic=resample_statistic,
@@ -593,49 +726,4 @@ def get_experiment_hourly_filter(
         hourly_filter = binary_df.sum(axis=1)
         hourly_filter = hourly_filter[hourly_filter >= 1]
         hourly_filter_dict[project] = hourly_filter
-    return hourly_filter_dict
-
-
-def get_zonal_experiment_hourly_filter(
-    project,
-    zones,
-    filter_columns,
-    experiment_year="2022",
-    no_weekends=True,
-):
-    """
-    Helper function to get dictionary of zonal hourly filters based on 2022 experiments
-
-    Parameters
-    ----------
-    project : str
-        name of project
-    zones : list
-        list of zones
-    filter_columns : list
-        list of binary df columns to include in filter
-    experiment_year : str
-        either "2022" or "2021"
-    no_weekends : bool
-
-    Returns
-    -------
-    hourly_filter dict
-    """
-    hourly_filter_dict = {}
-
-    for zone in zones:
-        binary_df = get_2021_2022_binary_df(
-            project,
-            experiment_year=experiment_year,
-            freq="hourly",
-            drop_baseline_column=False,
-            no_weekends=no_weekends,
-            control_for_weekends=(not no_weekends),
-            zone=zone,
-        )
-        binary_df = binary_df[filter_columns]
-        hourly_filter = binary_df.sum(axis=1)
-        hourly_filter = hourly_filter[hourly_filter >= 1]
-        hourly_filter_dict[zone] = hourly_filter
     return hourly_filter_dict

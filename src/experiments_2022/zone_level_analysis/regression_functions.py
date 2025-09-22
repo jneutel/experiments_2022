@@ -32,6 +32,58 @@ FORMAL_TRIALS_2022_END = {
 }
 
 
+def get_buildings_sp_schedule(experiment_year="2022", freq="daily", use_raw=False):
+    if freq == "daily":
+        date_format = "%m/%d/%y"
+    else:
+        date_format = "%m/%d/%y %H:%M"
+    if use_raw:
+        path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_{freq}_raw.csv"
+    else:
+        path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_{freq}.csv"
+    building_schedule = pd.read_csv(
+        path, index_col=0, parse_dates=True, date_format=date_format
+    )
+    building_schedule.index = pd.to_datetime(building_schedule.index)
+    return building_schedule
+
+
+def get_zonal_sp_schedule(project, experiment_year="2022", freq="daily", df=None):
+    ez_csv = pd.read_csv(
+        DATASETS_PATH / f"csvs/{experiment_year}_experiment_csvs/excluded_zones.csv"
+    )
+    ezs = list(ez_csv[project].dropna())
+
+    if freq == "daily":
+        date_format = "%m/%d/%y"
+    else:
+        date_format = "%m/%d/%y %H:%M"
+
+    path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_{freq}_{project}.csv"
+    zone_schedule = pd.read_csv(
+        path, index_col=0, parse_dates=True, date_format=date_format
+    )
+    zone_schedule.index = pd.to_datetime(zone_schedule.index)
+
+    building_schedule = get_buildings_sp_schedule(
+        experiment_year=experiment_year, freq=freq, use_raw=False
+    )[project]
+
+    for zone in ezs:
+        zone_schedule[zone] = building_schedule
+
+    if df is not None:
+        # add cols
+        add_these_cols = list(set(list(df.columns)) - set(list(zone_schedule.columns)))
+        for col in add_these_cols:
+            zone_schedule[col] = building_schedule
+        # add idx
+        zone_schedule = zone_schedule.reindex(df.index)
+        # trim
+        zone_schedule = zone_schedule.loc[df.index, df.columns]
+    return zone_schedule
+
+
 def get_2021_2022_binary_df(
     project,
     experiment_year="2022",
@@ -78,61 +130,19 @@ def get_2021_2022_binary_df(
     """
     # get encoded schedule
     if zone is not None:
-        ez_csv = pd.read_csv(
-            DATASETS_PATH / f"csvs/{experiment_year}_experiment_csvs/excluded_zones.csv"
+        zonal_schedule = get_zonal_sp_schedule(
+            project=project, experiment_year=experiment_year, freq=freq, df=None
         )
-        ezs = list(ez_csv[project].dropna())
-        # zonal schedule
-        if freq == "hourly":
-            path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_hourly_{project}.csv"
-            encoded_schedule = pd.read_csv(
-                path, index_col=0, parse_dates=True, date_format="%m/%d/%y %H:%M"
-            )
+        if zone not in zonal_schedule.columns:
+            encoded_schedule = get_buildings_sp_schedule(
+                experiment_year=experiment_year, freq=freq, use_raw=False
+            )[project]
         else:
-            path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_daily_{project}.csv"
-            encoded_schedule = pd.read_csv(
-                path, index_col=0, parse_dates=True, date_format="%m/%d/%y"
-            )
-        if (zone not in list(encoded_schedule.columns)) or (zone in ezs):
-            return get_2021_2022_binary_df(
-                project=project,
-                experiment_year=experiment_year,
-                freq=freq,
-                baseline_column=baseline_column,
-                drop_baseline_column=drop_baseline_column,
-                no_weekends=no_weekends,
-                control_for_weekends=control_for_weekends,
-                zone=None,
-            )
-        else:
-            encoded_schedule = encoded_schedule[zone]
-
+            encoded_schedule = zonal_schedule[zone]
     else:
-        # building wide
-        if use_raw:
-            if freq == "hourly":
-                path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_hourly_raw.csv"
-                encoded_schedule = pd.read_csv(
-                    path, index_col=0, parse_dates=True, date_format="%m/%d/%y %H:%M"
-                )[project]
-            else:
-                path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_daily_raw.csv"
-                encoded_schedule = pd.read_csv(
-                    path, index_col=0, parse_dates=True, date_format="%m/%d/%y"
-                )[project]
-        else:
-            if freq == "hourly":
-                path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_hourly.csv"
-                encoded_schedule = pd.read_csv(
-                    path, index_col=0, parse_dates=True, date_format="%m/%d/%y %H:%M"
-                )[project]
-            else:
-                path = f"{DATASETS_PATH}/csvs/{experiment_year}_experiment_csvs/sp_schedule_daily.csv"
-                encoded_schedule = pd.read_csv(
-                    path, index_col=0, parse_dates=True, date_format="%m/%d/%y"
-                )[project]
-
-    encoded_schedule.index = pd.to_datetime(encoded_schedule.index)
+        encoded_schedule = get_buildings_sp_schedule(
+            experiment_year=experiment_year, freq=freq, use_raw=use_raw
+        )[project]
 
     # Prepare
     if experiment_year == "2021":
@@ -191,7 +201,7 @@ def general_Delta_fn(df, T, binary, mode="Absolute Change", summary_statistic="M
     """
     # allow for pd.DataFrame input as T
     if T is not None and isinstance(T, pd.DataFrame):
-        T = T["temperture"]
+        T = T["temperature"]
 
     # allow for pd.Series input as binary
     if isinstance(binary, pd.Series):

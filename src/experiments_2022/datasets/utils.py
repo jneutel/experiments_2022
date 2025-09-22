@@ -56,6 +56,8 @@ AVAILABLE_VARIABLES = [
     "zone-simple_cooling_requests",
     "zone-simple_heating_requests",
     "ahu-airflow",
+    "zone-dat_ahu",
+    "zone-total_cooling",
 ]
 
 VARIABLE_DEPENDENCIES = {
@@ -67,6 +69,8 @@ VARIABLE_DEPENDENCIES = {
     "zone-simple_cooling_requests": ["zone-tloads"],
     "zone-simple_heating_requests": ["zone-tloads"],
     "ahu-airflow": ["zone-map", "zone-airflow"],
+    "zone-dat_ahu": ["ahu-dat", "zone-map"],
+    "zone-total_cooling": ["zone-temps", "zone-airflow", "ahu-dat", "zone-map"],
 }
 
 
@@ -264,8 +268,10 @@ def compute_zone_simple_cooling_requests(data_dict):
     for this_var in data_dict:
         data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
     tload = data_dict["zone-tloads"]
+    # df = (tload >= 70).astype("float")
     df = pd.DataFrame(0, index=tload.index, columns=tload.columns)
     df[tload >= 70] = 1
+    df = df.where(tload.notna())
     return df
 
 
@@ -293,8 +299,10 @@ def compute_zone_simple_heating_requests(data_dict):
     for this_var in data_dict:
         data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
     tload = data_dict["zone-tloads"]
+    # df = (tload <= -70).astype("float")
     df = pd.DataFrame(0, index=tload.index, columns=tload.columns)
     df[tload <= -70] = 1
+    df = df.where(tload.notna())
     return df
 
 
@@ -335,6 +343,87 @@ def compute_ahu_airflow(data_dict):
     return summed_supply_air
 
 
+def compute_zone_dat_ahu(data_dict):
+    """
+    Compute zone-dat at the ahu level, for each vav.
+
+    Parameters
+    ----------
+    data_dict : dict
+        dictionary containing the data needed for this calc
+        keys of dictionary are variable name
+        value is the df
+        in this case, {"ahu-dat": df1, "zone-map": df2}
+        df: index time, column is equip
+
+    Returns
+    -------
+    pandas.DataFrame
+
+    Notes
+    -----
+    - Returns data in F.
+    """
+    for this_var in data_dict:
+        data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
+    dat = data_dict["ahu-dat"]
+    vav_to_ahu = data_dict["zone-map"]["AHU"]
+    dat_ahu = pd.DataFrame(index=dat.index)
+    for ahu in dat.columns:
+        if ahu in vav_to_ahu.values:
+            zones = list(vav_to_ahu[vav_to_ahu == ahu].dropna().index)
+            for zone in zones:
+                dat_ahu[zone] = dat[ahu]
+    return dat_ahu
+
+
+def compute_zone_total_cooling(data_dict):
+    """
+    Computes total cooling used for zone when in cooling mode.
+
+    Parameters
+    ----------
+    data_dict : dict
+        dictionary containing the data needed for this calc
+        keys of dictionary are variable name
+        value is the df
+        in this case ...
+        {
+            "zone-temps" : df1,
+            "zone-airflow" : df2,
+            "ahu-dat" : df3,
+            "zone-map" : df4
+        }
+        df: index time, column is equip
+
+    Returns
+    -------
+    pandas.DataFrame
+
+    Notes
+    -----
+    - total cooling does count contributions from economizer
+    - Defined by (T - dat-ahu) * airflow * constants
+    - Assumes that we can load zone-airflow, zone-temps, zone-dat, and dat
+    - Returns in kW
+    """
+    for this_var in data_dict:
+        data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
+    iat = (data_dict["zone-temps"] - 32) * (5 / 9)  # F to C
+    airflow = data_dict["zone-airflow"] * 1.69901082  # cfm to m^3/s
+    ahu_dat = (data_dict["ahu-dat"] - 32) * (5 / 9)
+    zone_map = data_dict["zone-map"]
+    zone_dat_ahu = compute_zone_dat_ahu({"ahu-dat": ahu_dat, "zone-map": zone_map})  # C
+    iat, airflow, zone_dat_ahu = trim_to_common_elements([iat, airflow, zone_dat_ahu])
+    total_cooling = (
+        (iat - zone_dat_ahu)
+        * airflow
+        * 1.005  # cp air, kJ/kg.K
+        * 1.2041  # density air, kg/m3
+    )  # kW
+    return total_cooling
+
+
 # vars --> functions
 
 FUNCTIONS = {
@@ -346,4 +435,6 @@ FUNCTIONS = {
     "zone-simple_cooling_requests": compute_zone_simple_cooling_requests,
     "zone-simple_heating_requests": compute_zone_simple_heating_requests,
     "ahu-airflow": compute_ahu_airflow,
+    "zone-dat_ahu": compute_zone_dat_ahu,
+    "zone-total_cooling": compute_zone_total_cooling,
 }

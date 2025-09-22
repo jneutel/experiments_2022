@@ -14,6 +14,13 @@ from matplotlib import colors as mcolors
 # FORMATTING
 GRAPH_WIDTH = 800
 GRAPH_HEIGHT = 500
+TITLE_SZ = 32  # text size
+LEGEND_SZ = 28  # legend size
+TXT_SZ = 24  # text size
+MRKR_SZ = 10  # marker size
+GRAPH_NUM_COLS = 3
+HORIZONTAL_SPACING = 0.1
+VERTICAL_SPACING = None
 
 COLORS = {
     0: "MediumBlue",
@@ -28,12 +35,6 @@ COLORS = {
     9: "MediumVioletRed",
 }
 SHAPES = {0: "circle", 1: "x", 2: "triangle-up", 3: "square", 4: "cross", 5: "asterisk"}
-TITLE_SZ = 30  # text size
-TXT_SZ = 22  # text size
-MRKR_SZ = 8  # marker size
-GRAPH_NUM_COLS = 3
-HORIZONTAL_SPACING = 0.1
-VERTICAL_SPACING = None
 
 
 def force_dict(obj, title):
@@ -136,7 +137,7 @@ def update_fig_formatting(
     y_range=None,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
 ):
     """
     General purpose function that handles figure formatting
@@ -423,6 +424,7 @@ def make_dot_plot(
     x_axis_title="Zones",
     force_same_yaxes=True,
     y_range=None,
+    x_range=None,
     y_zerolinecolor="Black",
     x_zerolinecolor="LightGray",
     grid_color="LightGray",
@@ -431,7 +433,7 @@ def make_dot_plot(
     vertical_spacing=VERTICAL_SPACING,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     marker_size=MRKR_SZ,
     width=GRAPH_WIDTH,
     height=GRAPH_HEIGHT,
@@ -506,6 +508,8 @@ def make_dot_plot(
         default = True
     y_range : list
         if used, we force y axis range to [min, max]
+    x_range : list
+        if used, we force x axis range to [min, max]
     y_zerolinecolor : str
         color or x axis (y zero line)
         default = "Black"
@@ -830,6 +834,7 @@ def make_dot_plot(
         x_rangemode="normal",
         y_rangemode="normal",
         y_range=y_range,
+        x_range=x_range,
         title_size=title_size,
         text_size=text_size,
         legend_size=legend_size,
@@ -866,7 +871,7 @@ def make_scatter_plot(
     vertical_spacing=VERTICAL_SPACING,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     marker_size=MRKR_SZ,
     width=GRAPH_WIDTH,
     height=GRAPH_HEIGHT,
@@ -1319,7 +1324,7 @@ def make_time_series(
     vertical_spacing=None,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     line_width=3,
     width=GRAPH_WIDTH,
     height=GRAPH_HEIGHT,
@@ -1652,7 +1657,7 @@ def plot_experiment_regression(
     vertical_spacing=VERTICAL_SPACING,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     marker_size=MRKR_SZ,
     line_width=2,
     width=GRAPH_WIDTH,
@@ -1761,6 +1766,9 @@ def plot_experiment_regression(
     if isinstance(binary, pd.Series):
         binary = binary.to_frame()
         binary.columns = ["High SP"]
+
+    if isinstance(T, pd.DataFrame):
+        T = T["temperature"]
 
     # prep raw data
     if summary_statistic == "Mean":
@@ -1982,163 +1990,6 @@ def plot_experiment_regression(
     return fig
 
 
-def plot_regression(
-    regression_results,
-    y_data,
-    x_data,
-    line_legend,
-    y_axis_title="Y Label",
-    x_axis_title="X Label",
-    y_range=None,
-    num_cols=GRAPH_NUM_COLS,
-    horizontal_spacing=HORIZONTAL_SPACING,
-    vertical_spacing=VERTICAL_SPACING,
-    width=GRAPH_WIDTH,
-    height=GRAPH_HEIGHT,
-    fig=None,
-):
-    """
-    Plot regression results
-
-    Parameters
-    ----------
-    regression_results : pd.DataFrame
-        df with equips as index, cols as results (slope, int, etc)
-    y_data : pd.DataFrame
-        y_data with time as index (hourly) and equips as cols
-    x_data : pd.Series
-        x_data with time as index (hourly) and equips as cols
-    line_legend : dict
-        controls name and color of regression
-    y_axis_title : str
-        y label
-        default = "Y Label"
-    x_axis_title : str
-        x label
-        default = "X Label"
-    y_range : list
-        if used, we force y axis range to [min, max]
-    num_cols : int
-        number of columns in plot
-    horizontal_spacing : float
-        horizontal spacing between subplots
-    vertical_spacing : float
-        vertical spacing between subplots
-    width : int
-        width of sub-plots
-    height : int
-        height of sub-plots
-    fig : optional fig
-        can throw in existing plot so as to plot multiple experiments
-
-    Returns
-    -------
-    Regression figure
-    """
-    # prep raw data
-    y_data = y_data.groupby(y_data.index.date).mean()
-    y_data.index = pd.DatetimeIndex(y_data.index)
-    x_data = x_data.groupby(x_data.index.date).mean()
-    x_data.index = pd.DatetimeIndex(x_data.index)
-    common = y_data.index.intersection(x_data.index, sort=True)
-    y_data = y_data.loc[common, :]
-    x_data = x_data.loc[common, :]
-    equips = list(y_data.columns)
-
-    # prep plot
-    if len(equips) >= num_cols:
-        graph_num_cols = num_cols
-    else:
-        graph_num_cols = len(equips)
-    graph_num_rows = math.ceil(len(equips) / graph_num_cols)
-    if fig is None:
-        fig = sbplt.make_subplots(
-            rows=graph_num_rows,
-            cols=graph_num_cols,
-            subplot_titles=equips,
-            horizontal_spacing=horizontal_spacing,
-            vertical_spacing=vertical_spacing,
-        )
-    graph_r = 0
-    graph_c = 0
-
-    # plot each equip
-    for equip in equips:
-        # filter data for this equip
-        ys = y_data[equip]
-        ys = ys.dropna()
-        xs = x_data[equip]
-        xs = xs.dropna()
-        common = ys.index.intersection(xs.index, sort=True)
-        ys = ys[common]
-        xs = xs[common]
-        if len(ys) < 3:
-            continue
-        xs = xs.to_frame()
-        xs["Intercept"] = pd.Series(1, index=xs.index)
-        vars = ["X", "Intercept"]
-        xs.columns = vars
-        # plot
-        if graph_c == graph_num_cols:
-            graph_c = 0
-            graph_r += 1
-        # dots
-        for idx in ys.index:
-            fig.add_trace(
-                go.Scatter(
-                    x=[xs["X"][idx]],
-                    y=[ys[idx]],
-                    name=str(idx),
-                    mode="markers",
-                    marker_color=line_legend["color"],
-                    showlegend=False,
-                ),
-                row=graph_r + 1,
-                col=graph_c + 1,
-            )
-        # regression
-        x_sorted = xs["X"].sort_values()
-        y_reg = (
-            x_sorted * regression_results.loc[equip, "Slope X"]
-            + regression_results.loc[equip, "Slope Intercept"]
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x_sorted,
-                y=y_reg,
-                name=line_legend["name"],
-                mode="lines",
-                marker_color=line_legend["color"],
-                showlegend=False,
-            ),
-            row=graph_r + 1,
-            col=graph_c + 1,
-        )
-        graph_c += 1
-    # legend
-    fig.add_trace(
-        go.Scatter(
-            x=[np.nan],
-            y=[np.nan],
-            mode="markers",
-            name=line_legend["name"],
-            marker_color=line_legend["color"],
-            showlegend=True,
-        )
-    )
-    # format
-    fig = update_fig_formatting(
-        fig,
-        width=width * graph_num_cols,
-        height=height * graph_num_rows,
-        y_axis_title=y_axis_title,
-        x_axis_title=x_axis_title,
-        y_rangemode="normal",
-        y_range=y_range,
-    )
-    return fig
-
-
 def plot_experiment_summary(
     y_data,
     y_error_up_data=None,
@@ -2166,7 +2017,7 @@ def plot_experiment_summary(
     vertical_spacing=VERTICAL_SPACING,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     marker_size=MRKR_SZ,
     error_thickness=2,
     whisker_len=MRKR_SZ,
@@ -2504,6 +2355,7 @@ def make_bar_plot(
     annotation_type="float",
     annotation_angle=0,
     annotation_thresh=0.1,
+    annotation_color="white",
     force_same_yaxes=True,
     y_range=None,
     secondary_y_range=None,
@@ -2515,7 +2367,7 @@ def make_bar_plot(
     vertical_spacing=VERTICAL_SPACING,
     title_size=TITLE_SZ,
     text_size=TXT_SZ,
-    legend_size=TXT_SZ,
+    legend_size=LEGEND_SZ,
     legend_order="reversed",
     annotation_size=18,
     line_width=3,
@@ -2585,6 +2437,8 @@ def make_bar_plot(
         0 is horizontal, 90 vertical
     annotation_thresh : float
         if smaller than this thresh, dont annotate
+    annotation_color : str
+        "black" or "white"
     force_same_yaxes : bool
         whether all subplots have same y axis
     y_range : list
@@ -2739,7 +2593,7 @@ def make_bar_plot(
                             marker_pattern=dict(shape=bar_legend["pattern"][group]),
                             showlegend=False,
                             text=text[i] if group in annotations else None,
-                            textfont=dict(size=annotation_size),
+                            textfont=dict(size=annotation_size, color=annotation_color),
                             textangle=annotation_angle,
                         ),
                         secondary_y=row in secondary_bars,
@@ -2762,7 +2616,7 @@ def make_bar_plot(
                             marker_pattern=dict(shape=bar_legend["pattern"][group]),
                             showlegend=False,
                             text=text[i] if group in annotations else None,
-                            textfont=dict(size=annotation_size),
+                            textfont=dict(size=annotation_size, color=annotation_color),
                             textangle=annotation_angle,
                         ),
                         secondary_y=row in secondary_bars,
