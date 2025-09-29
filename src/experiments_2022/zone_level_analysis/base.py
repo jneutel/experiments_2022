@@ -15,7 +15,6 @@ ALL_BUILDINGS = [
     "OFF-5",
     "OFF-6",
     "OFF-7",
-    "OFF-8",
     "LAB-1",
     "LAB-2",
     "LAB-3",
@@ -29,7 +28,6 @@ VAV_BUILDINGS = [
     "OFF-5",
     "OFF-6",
     "OFF-7",
-    "OFF-8",
 ]
 
 FCU_BUILDINGS = [
@@ -55,7 +53,6 @@ EXPERIMENTS_BUILDINGS = {
         "OFF-5",
         "OFF-6",
         "OFF-7",
-        "OFF-8",
         "LAB-1",
         "LAB-2",
         "LAB-3",

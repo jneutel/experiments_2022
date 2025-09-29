@@ -47,6 +47,12 @@ PROJECTS_VAV = [
     "OFF-7",
 ]
 
+PROJECTS_FC = [
+    "LAB-1",
+    "LAB-2",
+    "LAB-3",
+]
+
 PROJECTS_VAV_TOTAL = [
     "OFF-1",
     "OFF-2",
@@ -93,6 +99,29 @@ SUMMER_END_2022 = pd.Timestamp("10-01-2022")
 DOMINANT_THRESH = 0.85
 ROGUE_THRESH = 0.7
 REACTIVE_THRESH = {"Pos": 20, "Neg": -20, "High Constant": 30, "Heating": -10}
+
+RESPONSE_COLORS = {
+    f"Reduced zonal load {abs(REACTIVE_THRESH['Neg'])}% or more": "ForestGreen",
+    "Small change zonal load": "RoyalBlue",
+    "Small change zonal load (remained high)": "DarkOrange",
+    f"Increased zonal load {abs(REACTIVE_THRESH['Pos'])}% or more": "Firebrick",
+    "Typically in heating": "Gray",
+}
+
+DOMINANT_COLORS = {
+    "Dominated": "Teal",
+    "Dominant": "Navy",
+    "Rogue": "Coral",
+}
+
+SINGLE_PLOT_LEGEND_SIZE = 26
+SINGLE_PLOT_TXT_SIZE = 23
+SINGLE_PLOT_ANNOTATION_SIZE = 23
+
+MULTI_PLOT_TITLE_SIZE = 32
+MULTI_PLOT_LEGEND_SIZE = 30
+MULTI_PLOT_ANNOTATION_SIZE = 24
+MULTI_PLOT_TXT_SIZE = 24
 
 
 def gini(x):
@@ -211,9 +240,9 @@ def run_building_regressions(
         sps = ["76", "78"]
         line_legend = {
             "name": {
-                "Control": "CSP = 23.3C",
-                "CSP = 76F": "CSP = 24.4C",
-                "CSP = 78F": "CSP = 25.5C",
+                "Control": "CSP = 23.3°C",
+                "CSP = 76F": "CSP = 24.4°C",
+                "CSP = 78F": "CSP = 25.5°C",
             },
             "color": {
                 "Control": "RoyalBlue",
@@ -225,8 +254,8 @@ def run_building_regressions(
         sps = ["76"]
         line_legend = {
             "name": {
-                "Control": "CSP = 23.3C",
-                "CSP = 76F": "CSP = 24.4C",
+                "Control": "CSP = 23.3°C",
+                "CSP = 76F": "CSP = 24.4°C",
             },
             "color": {
                 "Control": "RoyalBlue",
@@ -315,8 +344,11 @@ def run_building_regressions(
             marker_size=10,
             line_width=2.5,
             y_axis_title=y_axis_title,
-            x_axis_title="Average Daytime OAT (C)",
+            x_axis_title="Daytime Average OAT [°C]",
             dont_add_to_legend=dont_add_to_legend,
+            title_size=MULTI_PLOT_TITLE_SIZE,
+            text_size=MULTI_PLOT_TXT_SIZE,
+            legend_size=MULTI_PLOT_LEGEND_SIZE,
         )
         figs[project] = fig
 
@@ -325,9 +357,9 @@ def run_building_regressions(
     for i in range(len(new_index)):
         idx = new_index[i]
         if "CSP = 76F" in idx:
-            new_index[i] = idx.replace("CSP = 76F", "CSP = 24.4C")
+            new_index[i] = idx.replace("CSP = 76F", "CSP = 24.4°C")
         if "CSP = 78F" in idx:
-            new_index[i] = idx.replace("CSP = 78F", "CSP = 25.5C")
+            new_index[i] = idx.replace("CSP = 78F", "CSP = 25.5°C")
 
     summary.index = new_index
     summary.columns = [word.capitalize() for word in list(summary.columns)]
@@ -337,12 +369,12 @@ def run_building_regressions(
     regression_fig = viz.combine_figs(
         figs,
         y_axis_title=y_axis_title,
-        x_axis_title="Average Daytime OAT (C)",
+        x_axis_title="Daytime Average OAT [°C]",
         force_same_yaxes=False,
         force_same_xaxes=False,
         num_cols=3,
-        horizontal_spacing=0.1,
-        vertical_spacing=0.075,
+        horizontal_spacing=0.125,
+        vertical_spacing=0.1,
     )
 
     return deltas, deltas_high, deltas_low, summary, regression_fig

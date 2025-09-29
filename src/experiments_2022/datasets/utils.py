@@ -367,7 +367,7 @@ def compute_zone_dat_ahu(data_dict):
     for this_var in data_dict:
         data_dict[this_var] = clean_columns(data_dict[this_var], this_var)
     dat = data_dict["ahu-dat"]
-    vav_to_ahu = data_dict["zone-map"]
+    vav_to_ahu = data_dict["zone-map"]["AHU"]
     dat_ahu = pd.DataFrame(index=dat.index)
     for ahu in dat.columns:
         if ahu in vav_to_ahu.values:
